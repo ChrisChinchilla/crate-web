@@ -1,0 +1,451 @@
+title: Deploying Crate Using Mesos + Marathon
+author: Christian Haudum
+description: 
+created: 2015-02-11
+status: publish
+post_type: post
+tags: crate, mesos, marathon, mesos-dns, weave, unicast, multicast, deployment, howto 
+category: developernews
+
+
+We at Crate.IO try to make the deployment of our database as easy and fun as possible. That's why we try out all kinds of different environments and tools all the time. Within the last couple of months, quite a few management tools for orchestrating distributed applications popped up on our horizon. Mesosphere is one of them, and it seems to be pretty mature already. Time to do a quick check how to run Crate using Mesos and Marathon.
+
+In this post we'll quickly to through the neccessary steps to set up a scalable Crate cluster, but we'll not cover the basics. That said, you should take at least a quick look at the [Mesosphere documentation](http://mesosphere.com/docs/getting-started/) first if you aren't familiar with it.
+
+Ok, let's start!
+
+## Initial Setup
+
+We'll set up a Mesos cluster on Google Compute Engine with one single master and three slaves using the [Mesosphere Install Guide](http://mesosphere.com/docs/getting-started/datacenter/install/).
+
+```
+> gcloud compute instances create mesos-master \
+      --image centos-7 --zone us-central1-b --network mesos
+```
+
+```
+> gcloud compute instances create mesos-slave-{1..3} \
+      --image centos-7 --zone us-central1-b --network mesos
+```
+
+The `mesos` network has firewall rules applied that prevent un-authorized access to the ports that will be exposed to the pubic otherwise.
+
+### Slave Configuration
+
+Instances within the same network are able to see each other by their hostname, meaning that you don't need to know the internal IP for the **Zookeeper** configuration, but only the hostname of the master that we chose when we started the node.
+
+```
+zk://mesos-master:2181/mesos
+```
+
+As [documented](http://mesosphere.com/docs/tutorials/launch-docker-container-on-mesosphere/), we also need to change the configuration of the `mesos-slave` service.
+
+```
+$ echo 'docker,mesos' > /etc/mesos-slave/containerizers
+$ echo '10mins' > /etc/mesos-slave/executor_registration_timeout
+```
+
+It is recommended to set the timeout to `10mins`, because the first docker run needs to pull the images and that could take a while ;)
+
+Now that everything is ready, we can actually start with Crate.
+
+## Unicast Discovery
+
+The easiest way to get started with a Crate cluster on Mesos is to use unicast discovery. 
+On `mesos-master` - or somewhere else where you have access to the master - create a JSON specification for the Crate cluster and name it `CrateUnicast.json`:
+
+```json
+{
+  "id": "crate-mesos-unicast",
+  "container": {
+    "type": "DOCKER",
+    "docker": {
+      "image": "crate/crate:0.46.5-2",
+      "privileged": true,
+      "network": "HOST",
+      "parameters": []
+    },
+    "volumes": [
+      {
+        "containerPath": "/tmp",
+        "hostPath": "/tmp",
+        "mode": "RO"
+      },
+      {
+        "containerPath": "/data",
+        "hostPath": "/data/crate",
+        "mode": "RW"
+      }
+    ]
+  },
+  "instances": 3,
+  "cpus": 1,
+  "mem": 2014,
+  "uris": [],
+  "cmd": "crate -Des.cluster.name=mesos-unicast -Des.zen.discovery.minimum_master_nodes=2"
+  "env": {
+    "CRATE_HOSTS": "mesos-slave-1:4300,mesos-slave-2:4300,mesos-slave-3:4300",
+    "CRATE_HEAP_SIZE": "1024m"
+  },
+  "constraints": [
+    [
+      "hostname",
+      "UNIQUE"
+    ]
+  ],
+  "ports": []
+}
+```
+
+We set the key `network` for the container to `HOST`, so Mesos automatically binds Crate's internal ports (`4200`/`4300`) to the host network.
+Additionally we specify the environment variables `CRATE_HOSTS` (all available slaves at port 4300) and `CRATE_HEAP_SIZE` (half of the host system).
+
+The constraint `["hostname", "UNIQUE"]` guarantees that only one single Crate container is running on a slave.
+
+For the volumes, we can either create a re-usable data directory - in our case `/data/crate` - on the root disk (e.g. if you have an SSD root disk) or mount a separate disk. Then just adopt the path accordingly.
+
+Now let's submit this specification to Marathon:
+
+```sh
+$ curl -s -XPOST http://localhost:8080/v2/apps -d@CrateUnicast.json -H "Content-Type: application/json"
+```
+
+In the web UI (which runs on port `8080` on `mesos-master`) you can see that the app is popping up.
+Once the instances are running, we can verify the cluster with a curl command:
+
+```sh
+$ curl -s -XPOST mesos-slave-1:4200/_sql?pretty -d '{
+    "stmt":"select name, hostname from sys.nodes"
+  }'
+```
+
+The cluster is of course reachable on every single slave:
+
+```sh
+$ curl -s -XPOST mesos-slave-2:4200/_sql?pretty -d '{
+    "stmt":"select name, hostname from sys.nodes"
+  }'
+$ curl -s -XPOST mesos-slave-3:4200/_sql?pretty -d '{
+    "stmt":"select name, hostname from sys.nodes"
+  }'
+```
+
+So far, it seems that there haven't been that many advantages over a conventional docker deployment of Crate - except the overhead of setting up the Mesos cluster. However, [Marathon is much more](https://mesosphere.github.io/marathon/) than just a deployment tool, it is a "cluster-wide init and control system for services or Docker containers". That means, that you can easily start, stop and manage application clusters by just writing the app configuration and submitting it to Marathon.
+
+To test Marathon's capability to retain the application cluster contraints that we've specified in the `CrateUnicast.json` file, you can manually stop a docker container and watch the web UI restarting the lost instance. If you have access to the Crate Admin UI (`MESOS_SLAVE_IP:4200/admin/`) you should import a few thousand tweets using the Get Started Tutorial and set the number of replicas for the `tweets` table to `1-2` first. Then you're able to see Crate's "self-healing" capacity.
+
+*Note:* It is also possible to scale your Crate cluster using the Marathon web UI, but you need to be careful, because the `minimum_master_nodes` [setting](https://crate.io/docs/en/latest/search.html?q=minimum_master_nodes) is applied to each newly created Crate node.
+
+
+### Mesos-DNS
+
+> Mesos-DNS supports service discovery in Apache Mesos clusters. It allows applications and services running on Mesos to find each other through the domain name system (DNS), similarly to how services discover each other throughout the Internet.
+
+Unfortunatelly Crate does not have node discovery by DNS (yet), and Mesos-DNS is still in alpha, but I can see the potential there!
+Let's look how it works in general and what we can get out of it!
+
+The Mesos-DNS service is written in Go, which needs to be installed first. We gonna install the service on `mesos-master`, but it could be also installed on any slave, or even on a dedicated host. It also requires git, if not already installed.
+
+#### Configure The Master
+
+Mesosphere again provides a very good [installation guide](http://mesosphere.github.io/mesos-dns/docs/), so we can skip it here and proceed with the configuration file.
+
+```json
+{
+  "masters": ["mesos-master:5050"],
+  "refreshSeconds": 30,
+  "ttl": 60,
+  "domain": "mesos",
+  "port": 53,
+  "resolvers": ["...", "8.8.8.8"],
+  "timeout": 5,
+  "email": "root.mesos-dns.mesos"
+}
+```
+
+Since we have only a single Mesos master and the DNS serive is running on the same host, you could also set `masters` to `["localhost:5050"]`.
+If you have more masters you'd need to extend the list accordingly. You should also add the nameserver IPs from `/etc/resolv.conf`
+and append them before Google's `8.8.8.8` nameserver in the `resolvers` attribute.
+
+Now start the service in the background:
+
+```sh
+$ sudo mesos-dns -config=config.json &
+```
+
+For debugging purposes it makes sense to start the process in the foreground first and use the `-v=true` option to obtains debugging information:
+
+```sh
+$ sudo mesos-dns -config=config.json -v=true
+```
+
+#### Configure The Slaves
+
+Add `nameserver <IP_MESOS_MASTER>` as first line to `/etc/resolv.conf` so it looks similar like this:
+
+```conf
+# Generated by NetworkManager
+nameserver 10.243.104.140
+domain c.crate-gce.internal.
+search c.crate-gce.internal. 1054123946137.google.internal. google.internal.
+nameserver 169.254.169.254
+nameserver 10.243.0.1
+```
+
+Mesos tasks will be exposed via DNS using the `task.framework.domain` notation.
+Our task (app) is named `crate-mesos-unicast`, the framework we're using is `marathon` and as DNS domain we specified `mesos`,
+so the full qualified name is `crate-mesos-unicast.marathon.mesos`.
+
+It can be tested using `dig` (requires `bind-utils` to be installed):
+
+```
+$ dig crate-mesos-unicast.marathon.mesos A | grep 'IN A'
+
+crate-mesos-unicast.marathon.mesos. 60	IN	A	10.243.163.24
+crate-mesos-unicast.marathon.mesos. 60	IN	A	10.243.163.239
+crate-mesos-unicast.marathon.mesos. 60	IN	A	10.243.162.31
+```
+
+We can now access the Crate cluster from any slave host with its full qualified domain name.
+
+```sh
+$ curl -s -XPOST crate-mesos.marathon.mesos:4200/_sql?pretty -d '{
+    "stmt":"select name, hostname from sys.nodes"
+  }'
+```
+
+```json
+{
+  "cols" : [ "name", "hostname" ],
+  "duration" : 307,
+  "rows" : [ [ "Cadaver", "mesos-slave-1" ], [ "Svarog", "mesos-slave-2" ], [ "Valkyrie", "mesos-slave-3" ] ],
+  "rowcount" : 3
+}
+```
+
+Unfortunately there is not much more we can do with Crate and Mesos-DNS yet, but I hope you get the gist :)
+
+
+## Multicast Discovery With Weave
+
+We've already written a [blog post](/blog/crate-with-docker-and-weave/) how to utilize Weave for multicast discovery for Crate.
+
+This time we'll go a little further and adopt the concept of automatic IP assignment of Docker containers laid out in the great blog post [Adventures with Weave and Docker](http://sttts.github.io/docker/weave/mesos/2015/01/22/weave.html) by Stefan Schimanski.
+
+The idea is that Weave creates a virtual network and each host defines its own subnet, in which docker can assign IPs automatically to containers.
+
+
+
+![Infographic: Network, Subnets and IPs]()
+
+
+So we're going to install Weave on the slaves, create a bridge and tell the docker daemon to use a fixed IP range for its containers.
+
+```
+mesos-master
+  bridge cidr      192.168.0.0/16
+  container cidr   192.168.0.0/24
+
+mesos-slave-1
+  bridge cidr      192.168.0.1/16
+  container cidr   192.168.1.0/24
+
+mesos-slave-2
+  bridge cidr      192.168.0.2/16
+  container cidr   192.168.2.0/24
+
+mesos-slave-3
+  bridge cidr      192.168.0.3/16
+  container cidr   192.168.3.0/24
+```
+
+This will allow us to run 255 Mesos slaves and 255 containers on each slave. That should be enought for now, but if you want you can use wider IP ranges.
+
+### Installing Weave
+
+First, we need to install Weave on the master and all slaves:
+
+```sh
+$ sudo yum install bridge-utils -y
+$ sudo curl --silent --location --output /usr/sbin/weave https://github.com/zettio/weave/releases/download/latest_release/weave
+$ sudo chmod +x /usr/sbin/weave
+```
+
+If you haven't installed Docker on `mesos-master` you'd need to do that now, because Weave depends on it. Additionally we need to tell the Docker to used a fixed IP range for the containers. This can be achieved by adding `--bridge` and `--fixed-cidr` to the launch options in `/etc/sysconfig/docker`. 
+
+```
+# /etc/sysconfig/docker
+OPTIONS=--selinux-enabled -H fd:// --bridge=weave --fixed-cidr=192.168.255.0/24
+# DOCKER_TMPDIR=/var/tmp
+```
+
+Create the weave bridge and expose it to the host:
+
+```sh
+$ sudo weave create-bridge
+$ sudo weave expose 192.168.0.255/16
+```
+
+(Re)start the Docker service so it uses the new launch options and start the weave network:
+
+```sh
+$ sudo service docker restart
+$ sudo weave launch
+```
+
+For the slaves it is basically the same procedure, you can use this bash script:
+
+```sh
+#!/bin/bash -x
+
+sudo yum install bridge-utils -y
+sudo curl --silent --location --output /usr/sbin/weave https://github.com/zettio/weave/releases/download/latest_release/weave
+sudo chmod +x /usr/sbin/weave
+
+# $1 .. unique id of the slave (1..254)
+
+HOST_ID="$1"
+BRIDGE_CIDR="192.168.0.${HOST_ID}/16"
+NETWORK_CIDR="192.168.${HOST_ID}.0/24"
+
+echo "# /etc/sysconfig/docker
+# Modify these options if you want to change the way the docker daemon runs
+OPTIONS=--selinux-enabled -H fd:// --bridge=weave --fixed-cidr=${NETWORK_CIDR}" | sudo tee /etc/sysconfig/docker > /dev/null
+
+sudo weave create-bridge
+sudo weave expose ${BRIDGE_CIDR}
+
+sudo service docker restart
+# we connect to the already existing network on mesos-master
+sudo weave launch mesos-master 
+```
+
+Execute the script with the slave id, `1` for `mesos-slave-1`, and so on, on each node.
+
+```sh
+$ ./install-weave-bridge.sh 1
+```
+
+Verify the network status:
+
+```sh
+$ sudo weave status
+
+weave router 0.9.0
+Encryption off
+Our name is 7a:13:3b:07:3d:61
+Sniffing traffic on &{8 65535 ethwe ba:11:3a:61:d6:31 up|broadcast|multicast}
+MACs:
+02:42:c0:a8:03:01 -> 7a:ff:6c:20:7f:78 (2015-02-12 17:30:46.714657091 +0000 UTC)
+ba:11:3a:61:d6:31 -> 7a:13:3b:07:3d:61 (2015-02-12 17:22:53.45073163 +0000 UTC)
+02:42:c0:a8:ff:01 -> 7a:13:3b:07:3d:61 (2015-02-12 17:22:59.07080863 +0000 UTC)
+7a:13:3b:07:3d:61 -> 7a:13:3b:07:3d:61 (2015-02-12 17:30:08.585423533 +0000 UTC)
+02:42:c0:a8:01:01 -> 7a:74:e5:fe:bf:fe (2015-02-12 17:30:08.759828667 +0000 UTC)
+02:42:c0:a8:02:01 -> 7a:0c:69:e3:13:7c (2015-02-12 17:30:08.585252474 +0000 UTC)
+Peers:
+Peer 7a:0c:69:e3:13:7c (v2) (UID 1084274921423039471)
+   -> 7a:13:3b:07:3d:61 [10.243.104.140:6783]
+Peer 7a:ff:6c:20:7f:78 (v2) (UID 3372143863024318277)
+   -> 7a:13:3b:07:3d:61 [10.243.104.140:6783]
+Peer 7a:13:3b:07:3d:61 (v6) (UID 1676291112665720550)
+   -> 7a:74:e5:fe:bf:fe [192.168.0.255:40679]
+   -> 7a:0c:69:e3:13:7c [192.168.0.255:49763]
+   -> 7a:ff:6c:20:7f:78 [192.168.0.255:48296]
+Peer 7a:74:e5:fe:bf:fe (v2) (UID 5496559290939719523)
+   -> 7a:13:3b:07:3d:61 [10.243.104.140:6783]
+Routes:
+unicast:
+7a:13:3b:07:3d:61 -> 00:00:00:00:00:00
+7a:74:e5:fe:bf:fe -> 7a:74:e5:fe:bf:fe
+7a:0c:69:e3:13:7c -> 7a:0c:69:e3:13:7c
+7a:ff:6c:20:7f:78 -> 7a:ff:6c:20:7f:78
+broadcast:
+7a:ff:6c:20:7f:78 -> [7a:74:e5:fe:bf:fe 7a:0c:69:e3:13:7c]
+7a:13:3b:07:3d:61 -> [7a:74:e5:fe:bf:fe 7a:0c:69:e3:13:7c 7a:ff:6c:20:7f:78]
+7a:74:e5:fe:bf:fe -> [7a:0c:69:e3:13:7c 7a:ff:6c:20:7f:78]
+7a:0c:69:e3:13:7c -> [7a:74:e5:fe:bf:fe 7a:ff:6c:20:7f:78]
+Reconnects:
+```
+
+#### Launching The Cluster
+
+The app specification (make a new file names `CrateWeave.json`) becomes even simpler, because the hosts for unicast discovery do not need to be specified.
+
+```json
+{
+  "id": "crate-mesos-weave",
+  "container": {
+    "type": "DOCKER",
+    "docker": {
+      "image": "crate/crate:0.46.5-2",
+      "privileged": true,
+      "network": "HOST",
+      "parameters": []
+    },
+    "volumes": [
+      {
+        "containerPath": "/tmp",
+        "hostPath": "/tmp",
+        "mode": "RO"
+      },
+      {
+        "containerPath": "/data",
+        "hostPath": "/data/crate",
+        "mode": "RW"
+      }
+    ]
+  },
+  "instances": 3,
+  "cpus": 1,
+  "mem": 2014,
+  "uris": [],
+  "cmd": "crate -Des.cluster.name=crate-mesos-weave -Des.zen.discovery.minimum_master_nodes=2"
+  "env": {
+    "CRATE_HEAP_SIZE": "1024m"
+  },
+  "constraints": [
+    [
+      "hostname",
+      "UNIQUE"
+    ]
+  ],
+  "ports": []
+}
+```
+
+Submit it to Marathon:
+
+```sh
+$ curl -s -XPOST http://localhost:8080/v2/apps -d@CrateWeave.json -H "Content-Type: application/json"
+```
+
+The nodes of the Crate cluster will discover each through multicast which is enabled by the Weave network.
+
+
+And again, the cluster state can be verified on every slave using `dig` and `curl`:
+
+```sh
+$ dig crate-mesos-weave.marathon.mesos
+
+; <<>> DiG 9.9.4-RedHat-9.9.4-14.el7_0.1 <<>> crate-mesos-weave.marathon.mesos
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 55601
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;crate-mesos-weave.marathon.mesos. IN	A
+
+;; ANSWER SECTION:
+crate-mesos-weave.marathon.mesos. 60 IN	A	10.243.163.24
+crate-mesos-weave.marathon.mesos. 60 IN	A	10.243.163.239
+crate-mesos-weave.marathon.mesos. 60 IN	A	10.243.162.31
+
+;; Query time: 4 msec
+;; SERVER: 10.243.104.140#53(10.243.104.140)
+;; WHEN: Thu Feb 12 17:45:54 UTC 2015
+;; MSG SIZE  rcvd: 194
+```
+
+**nodes don't discover each other, because the publish_host setting is set in the mesos environment**
+
