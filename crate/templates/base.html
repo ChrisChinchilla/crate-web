@@ -27,9 +27,10 @@
     <link rel="shortcut icon" type="image/x-icon" href="{% static 'favicon.png' %}" />
 
     <link rel="stylesheet" href="{% static '/static/css/pygments-github.css' %}" />
-    <link rel="stylesheet" href="{% static '/static/css/bootstrap.css' %}" />
     <link rel="stylesheet" href="{% static '/static/css/font-awesome.min.css' %}" />
-    <link rel="stylesheet" href="{% static '/static/css/main.css' %}" />
+    <link rel="stylesheet" href="{% static '/static/css/normalize.css' %}" />
+    <link rel="stylesheet" href="{% static '/static/css/webflow.css' %}" />
+    <link rel="stylesheet" href="{% static '/static/css/crate.webflow.css' %}" />
     {% block extra_css %}
     {% endblock %}
 
@@ -42,35 +43,24 @@
   <body>
 
     {% block navbar1 %}
-    <nav class="navbar navbar-default navbar-fixed-top">
-      <div class="container">
-        <div class="navbar-header">
-          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-            <span class="icon-bar"></span>
-            <span class="icon-bar"></span>
-            <span class="icon-bar"></span>
-          </button>
-          <a class="navbar-brand" href="{% url '/index.html' %}"><img src="{% static '/static/images/crate-logo.png' %}" alt="crate.io" /></a>
-        </div>
-        <div class="navbar-collapse collapse">
-          <ul class="nav navbar-nav">
-            <li class="{% if_current_page '/overview.html' 'active' '' %}"><a href="{% url '/overview.html' %}">What is Crate?</a></li>
-            <li class="{% if_current_page '/try.html' 'active' '' %}"><a href="{% url '/try.html' %}">Try it!</a></li>
-            <li class="{% if_current_page '/docs.html' 'active' '' %}"><a href="{% url '/docs.html' %}">Install &amp; Docs</a></li>
-          </ul>
-          <form class="navbar-form navbar-right {% if_current_page '/search.html' 'hide' '' %}" action="https://www.google.com/cse">
-            <input type="hidden" name="cx" value="009648942934194962260:bxkpxryedis" />
-            <input type="hidden" name="ie" value="UTF-8" />
-            <div class="form-group">
-              <div class="input-group">
-                <input class="form-control input-sm" type="text" name="q" placeholder="Search crate.io" />
-                <div class="input-group-addon input-sm"><i class="fa fa-search"></i></div>
-              </div>
+    <div class="header c-main-wrapper">
+      <div class="c-container c-container-nav">
+        <div class="w-nav c-navbar" data-collapse="small" data-animation="default" data-duration="200" data-contain="1">
+          <div class="w-container c-menu-container">
+            <a class="w-nav-brand c-brand" href="#"><img class="c-logo" src="{% static '/static/images/logo_2x.png' %}" width="165" alt="54dc799d8c8978b11f861bb0_logo_2x.png"></a>
+            <nav class="w-nav-menu c-nav-menu" role="navigation">
+              <a class="w-nav-link c-nav-link" href="{% url '/about/index.html' %}">What is Crate?</a>
+              <a class="w-nav-link c-nav-link" href="{% url '/try.html' %}">Try it!</a>
+              <a class="w-nav-link c-nav-link" href="{% url '/docs.html' %}">Docs &amp; Install</a>
+              <a class="w-nav-link c-nav-link" href="{% url '/search.html' %}">Search</a>
+            </nav>
+            <div class="w-nav-button c-menu-button">
+              <div class="w-icon-nav-menu c-menu-icon"></div>
             </div>
-          </form>
+          </div>
         </div>
       </div>
-    </nav>
+    </div>
     {% endblock %}
 
     {% block navbar2 %}

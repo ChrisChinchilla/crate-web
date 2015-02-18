@@ -1,40 +1,74 @@
-<footer class="footer">
+  <div class="footer c-main-wrapper">
+    <div class="c-container">
+      <div class="w-row c-row">
+        <div class="w-col w-col-3 c-col">
+          <ul class="w-list-unstyled">
+            <li class="c-footer-item">
+              <h4 class="c-footer-heading">Company</h4>
+            </li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/about/index.html' %}" title="About">About</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/about/team.html' %}" title="Team">Team</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/jobs.html' %}" title="Jobs">Jobs</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/blog.html' %}" title="Blog">Blog</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/events.html' %}" title="Events">Events</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/about/contact.html' %}" title="Contact">Contact</a></li>
+          </ul>
+        </div>
+        <div class="w-col w-col-3 c-col">
+          <ul class="w-list-unstyled">
+            <li class="c-footer-item">
+              <h4 class="c-footer-heading">Open Source</h4>
+            </li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/community.html' %}" title="Community">Community</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/community/contribute.html' %}" title="Contribute">Contribute</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" target="_blank" href="https://github.com/crate" title="Github">Github</a></li>
+            <li class="c-footer-item">
+              <h4 class="c-footer-heading">Enterprise</h4>
+            </li>
+            <li class="c-footer-item"><a class="c-footer-link" href="{% url '/download/pricing.html' %}" title="Pricing">Pricing</a></li>
+          </ul>
+        </div>
+        <div class="w-col w-col-3 c-col">
+          <ul class="w-list-unstyled">
+            <li class="c-footer-item">
+              <h4 class="c-footer-heading">Legal</h4>
+            </li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/legal/trademarks.html' %}" title="Trademark">Trademark Guidelines</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/legal/privacy.html' %}" title="Privacy Policy">Privacy Policy</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/legal/terms-of-service.html' %}" title="Terms of Service">Terms of Service</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/legal/license.html' %}" title="License">License</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/legal/notice.html' %}" title="Notice">Notice</a></li>
+              <li class="c-footer-item"><a class="c-footer-link" href="{% url '/legal/imprint.html' %}" title="Imprint">Imprint</a></li>
+          </ul>
+        </div>
+        <div class="w-col w-col-3 c-col">
+          <ul class="w-list-unstyled">
+            <li class="c-footer-item">
+              <h4 class="c-footer-heading">Connect</h4>
+            </li>
+            <li class="c-footer-item"><a class="c-footer-link" href="#">Twitter</a>
+            </li>
+            <li class="c-footer-item"><a class="c-footer-link" href="#">Facebook</a>
+            </li>
+            <li class="c-footer-item"><a class="c-footer-link" href="#">Google+</a>
+            </li>
+            <li class="c-footer-item"><a class="c-footer-link" href="#">LinkedIn</a>
+            </li>
+            <li class="c-footer-item"><a class="c-footer-link" href="#">Youtube</a>
+            </li>
+            <li class="c-footer-item"><a class="c-footer-link" href="#">Newsletter</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="c-footer-copyright">© 2013-2015 CRATE Technology GmbH</div>
+  </div>
+
+
+  <!-- footer class="footer">
       <div class="container">
         <div class="row">
-          <div class="col-sm-2 col-xs-4 col-md-2">
-            <p class="h4">Company</p>
-            <ul class="list-unstyled">
-              <li><a href="{% url '/about/index.html' %}" title="About">About</a></li>
-              <li><a href="{% url '/about/team.html' %}" title="Team">Team</a></li>
-              <li><a href="{% url '/jobs.html' %}" title="Jobs">Jobs</a></li>
-              <li><a href="{% url '/blog.html' %}" title="Blog">Blog</a></li>
-              <li><a href="{% url '/events.html' %}" title="Events">Events</a></li>
-              <li><a href="{% url '/about/contact.html' %}" title="Contact">Contact</a></li>
-            </ul>
-          </div>
-          <div class="col-sm-2 col-xs-4 col-md-2">
-            <p class="h4">Open Source</p>
-            <ul class="list-unstyled">
-              <li><a href="{% url '/community.html' %}" title="Community">Community</a></li>
-              <li><a href="{% url '/community/contribute.html' %}" title="Contribute">Contribute</a></li>
-              <li><a target="_blank" href="https://github.com/crate" title="Github">Github</a></li>
-            </ul>
-            <p class="h4">Enterprise</p>
-            <ul class="list-unstyled">
-              <li><a href="{% url '/download/pricing.html' %}" title="Pricing">Pricing</a></li>
-            </ul>
-          </div>
-          <div class="col-sm-2 col-xs-4 col-md-2 col-lg-4">
-            <p class="h4">Legal</p>
-            <ul class="list-unstyled">
-              <li><a href="{% url '/legal/trademarks.html' %}" title="Trademark">Trademark Guidelines</a></li>
-              <li><a href="{% url '/legal/privacy.html' %}" title="Privacy Policy">Privacy Policy</a></li>
-              <li><a href="{% url '/legal/terms-of-service.html' %}" title="Terms of Service">Terms of Service</a></li>
-              <li><a href="{% url '/legal/license.html' %}" title="License">License</a></li>
-              <li><a href="{% url '/legal/notice.html' %}" title="Notice">Notice</a></li>
-              <li><a href="{% url '/legal/imprint.html' %}" title="Imprint">Imprint</a></li>
-            </ul>
-          </div>
           <div class="col-sm-6 col-xs-12 col-md-6 col-lg-4">
             <p class="h4">Connect</p>
             <div class="">
